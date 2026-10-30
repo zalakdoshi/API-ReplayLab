@@ -3,10 +3,11 @@ const Request = require('../models/Request');
 const Baseline = require('../models/Baseline');
 const axios = require('axios');
 const deepDiff = require('deep-diff');
+const { validateTargetURL } = require('../utils/ipValidator');
 
 // @desc    Execute replay for a single request
 // @route   POST /api/replay/execute/:requestId
-// @access  Public
+// @access  Private (requires authentication)
 exports.executeReplay = async (req, res) => {
   try {
     const { requestId } = req.params;
@@ -25,10 +26,21 @@ exports.executeReplay = async (req, res) => {
       return res.status(404).json({ error: 'Request not found' });
     }
 
+    // Determine target URL and validate it
+    const finalTargetUrl = targetUrl || request.url;
+    const urlValidation = validateTargetURL(finalTargetUrl);
+    
+    if (!urlValidation.valid) {
+      return res.status(403).json({ 
+        error: `Invalid target URL: ${urlValidation.error}`,
+        statusCode: 403
+      });
+    }
+
     // Create replay run
     const replayRun = new ReplayRun({
       requestId,
-      targetUrl: targetUrl || request.url,
+      targetUrl: finalTargetUrl,
       triggeredBy,
       buildId,
       commitHash,
@@ -42,7 +54,7 @@ exports.executeReplay = async (req, res) => {
     await replayRun.save();
 
     // Execute in background
-    executeReplayAsync(replayRun._id, request, targetUrl || request.url)
+    executeReplayAsync(replayRun._id, request, finalTargetUrl)
       .catch(error => console.error('Replay execution error:', error));
 
     res.status(202).json({
@@ -189,7 +201,7 @@ function getDiffType(kind) {
 
 // @desc    Get replay run status
 // @route   GET /api/replay/status/:runId
-// @access  Public
+// @access  Private (requires authentication)
 exports.getReplayStatus = async (req, res) => {
   try {
     const replayRun = await ReplayRun.findById(req.params.runId)
@@ -207,7 +219,7 @@ exports.getReplayStatus = async (req, res) => {
 
 // @desc    Get all replay runs
 // @route   GET /api/replay/runs
-// @access  Public
+// @access  Private (requires authentication)
 exports.getAllReplays = async (req, res) => {
   try {
     const { 
@@ -247,7 +259,7 @@ exports.getAllReplays = async (req, res) => {
 
 // @desc    Execute batch replay
 // @route   POST /api/replay/batch
-// @access  Public
+// @access  Private (requires authentication)
 exports.executeBatchReplay = async (req, res) => {
   try {
     const { 
@@ -264,6 +276,17 @@ exports.executeBatchReplay = async (req, res) => {
       return res.status(400).json({ error: 'Request IDs array is required' });
     }
 
+    // Validate base URL if provided
+    if (targetBaseUrl) {
+      const urlValidation = validateTargetURL(targetBaseUrl);
+      if (!urlValidation.valid) {
+        return res.status(403).json({ 
+          error: `Invalid base URL: ${urlValidation.error}`,
+          statusCode: 403
+        });
+      }
+    }
+
     const requests = await Request.find({ 
       _id: { $in: requestIds },
       isActive: true 
@@ -275,6 +298,13 @@ exports.executeBatchReplay = async (req, res) => {
       const targetUrl = targetBaseUrl 
         ? `${targetBaseUrl}${new URL(request.url).pathname}`
         : request.url;
+
+      // Validate each target URL
+      const urlValidation = validateTargetURL(targetUrl);
+      if (!urlValidation.valid) {
+        console.warn(`Skipping request ${request._id}: ${urlValidation.error}`);
+        continue;
+      }
 
       const replayRun = new ReplayRun({
         requestId: request._id,
@@ -309,7 +339,7 @@ exports.executeBatchReplay = async (req, res) => {
 
 // @desc    Get replay statistics
 // @route   GET /api/replay/stats
-// @access  Public
+// @access  Private (requires authentication)
 exports.getReplayStats = async (req, res) => {
   try {
     const total = await ReplayRun.countDocuments();
