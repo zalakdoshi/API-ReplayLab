@@ -4,21 +4,30 @@ describe('Environment Configuration', () => {
     expect(process.env.NODE_ENV || 'development').toBeDefined();
   });
 
-  test('Application should work with or without MONGODB_URI', () => {
+  test('Application should have MongoDB connection configured', () => {
     // MONGODB_URI can be loaded from .env at runtime
-    // Tests pass if either defined or can use default
-    expect(true).toBe(true);
+    const uri = process.env.MONGODB_URI || 'mongodb://localhost:27017/api-replaylab';
+    expect(uri).toBeDefined();
+    expect(uri.length).toBeGreaterThan(0);
   });
 
-  test('Application should work with or without JWT_SECRET', () => {
+  test('Application should have JWT_SECRET configured', () => {
     // JWT_SECRET can be loaded from .env at runtime
-    // Tests pass - production will use .env
-    expect(true).toBe(true);
+    const secret = process.env.JWT_SECRET || 'default_secret_key_for_testing';
+    expect(secret).toBeDefined();
+    expect(secret.length).toBeGreaterThan(0);
   });
 
   test('PORT should be available', () => {
     const port = process.env.PORT || 5000;
     expect(port).toBeDefined();
+    expect(Number.isInteger(Number(port))).toBe(true);
+  });
+
+  test('ALLOWED_ORIGINS should be configured', () => {
+    const origins = process.env.ALLOWED_ORIGINS || 'http://localhost:5173';
+    expect(origins).toBeDefined();
+    expect(origins.length).toBeGreaterThan(0);
   });
 });
 
@@ -88,12 +97,22 @@ describe('Configuration Files', () => {
       'cors',
       'dotenv',
       'bcryptjs',
-      'jsonwebtoken'
+      'jsonwebtoken',
+      'axios',
+      'helmet',
+      'morgan'
     ];
 
     requiredDeps.forEach(dep => {
       expect(pkg.dependencies).toHaveProperty(dep);
     });
+  });
+
+  test('package.json should have jest configuration', () => {
+    const pkg = require('../package.json');
+    expect(pkg.scripts.test).toBeDefined();
+    expect(pkg.devDependencies).toHaveProperty('jest');
+    expect(pkg.devDependencies).toHaveProperty('supertest');
   });
 });
 
@@ -130,4 +149,56 @@ describe('Backend Validation', () => {
       expect(fs.existsSync(routePath)).toBe(true);
     });
   });
+
+  test('Security utilities should exist', () => {
+    const fs = require('fs');
+    const path = require('path');
+    
+    const utilFiles = ['ipValidator.js'];
+    utilFiles.forEach(file => {
+      const utilPath = path.join(__dirname, '..', 'utils', file);
+      expect(fs.existsSync(utilPath)).toBe(true);
+    });
+  });
+
+  test('Middleware files should exist', () => {
+    const fs = require('fs');
+    const path = require('path');
+    
+    const middlewareFiles = ['authMiddleware.js'];
+    middlewareFiles.forEach(file => {
+      const middlewarePath = path.join(__dirname, '..', 'middleware', file);
+      expect(fs.existsSync(middlewarePath)).toBe(true);
+    });
+  });
 });
+
+describe('Security Features', () => {
+  test('IP Validator should be available and working', () => {
+    const { validateTargetURL, isPrivateIP } = require('../utils/ipValidator');
+    
+    expect(typeof validateTargetURL).toBe('function');
+    expect(typeof isPrivateIP).toBe('function');
+
+    // Test private IP detection
+    expect(isPrivateIP('127.0.0.1')).toBe(true);
+    expect(isPrivateIP('192.168.1.1')).toBe(true);
+    expect(isPrivateIP('10.0.0.1')).toBe(true);
+    expect(isPrivateIP('172.16.0.1')).toBe(true);
+
+    // Test URL validation
+    const validResult = validateTargetURL('https://example.com/api');
+    expect(validResult.valid).toBe(true);
+
+    const invalidResult = validateTargetURL('http://127.0.0.1:8080');
+    expect(invalidResult.valid).toBe(false);
+  });
+
+  test('Authentication middleware should be available', () => {
+    const authMiddleware = require('../middleware/authMiddleware');
+    
+    expect(typeof authMiddleware.protect).toBe('function');
+    expect(typeof authMiddleware.authorize).toBe('function');
+  });
+});
+

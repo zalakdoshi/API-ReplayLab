@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const { protect } = require('../middleware/authMiddleware');
 const {
   executeReplay,
   getReplayStatus,
@@ -8,11 +9,11 @@ const {
   getReplayStats
 } = require('../controllers/replayController');
 
-// Routes
-router.post('/execute/:requestId', executeReplay);
-router.post('/batch', executeBatchReplay);
-router.get('/runs', getAllReplays);
-router.get('/status/:runId', getReplayStatus);
-router.get('/stats', getReplayStats);
+// All replay routes require authentication
+router.post('/execute/:requestId', protect, executeReplay);
+router.post('/batch', protect, executeBatchReplay);
+router.get('/runs', protect, getAllReplays);
+router.get('/status/:runId', protect, getReplayStatus);
+router.get('/stats', protect, getReplayStats);
 
 module.exports = router;
